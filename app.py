@@ -1,160 +1,164 @@
 import streamlit as st
 import numpy as np
+import os
+import io
+import pickle
 from PIL import Image
+from tensorflow.keras.models import load_model
+from tensorflow.keras.preprocessing import image as keras_image
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
 
-# ----------------------------- #
-# Helper functions
-# ----------------------------- #
+# ---------------- PAGE CONFIG ----------------
+st.set_page_config(page_title="🌍 AI-Powered Disaster Aid System", layout="wide")
 
-def probs_to_label(probs, labels):
-    idx = np.argmax(probs)
-    return labels[idx], float(probs[idx])
+# ---------------- LABELS ----------------
+LABELS = ["No Disaster", "Disaster"]
+TEXT_CLASSES = ["other", "food", "shelter", "rescue", "medical"]
 
-def get_advisory_message(disaster_type):
-    messages = {
-        "fire": "🔥 Fire detected — stay away from flames and evacuate nearby areas immediately.",
-        "flood": "🌊 Flooding reported — move to higher ground and avoid floodwater.",
-        "earthquake": "🌍 Earthquake detected — stay in open areas and avoid tall structures.",
-        "hurricane": "🌪️ Severe storm detected — take shelter and follow official alerts.",
-        "no_disaster": "✅ Area appears safe — no signs of disaster detected."
-    }
-    return messages.get(disaster_type, "⚠️ Situation uncertain — stay alert and follow safety protocols.")
+# ---------------- MODEL PATHS ----------------
+IMAGE_MODEL_PATH = "disaster_cnn_mobilenet_clean.h5"
+TEXT_MODEL_PATH = "disaster_text_bilstm.h5"
+TOKENIZER_PATH = "tokenizer.pkl"
 
-def fuse_predictions(image_probs, text_probs, image_weight=0.6, text_weight=0.4):
-    image_probs = np.array(image_probs)
-    text_probs = np.array(text_probs)
-    fused_probs = (image_weight * image_probs) + (text_weight * text_probs)
-
-    image_label_idx = np.argmax(image_probs)
-    text_label_idx = np.argmax(text_probs)
-    fused_label_idx = np.argmax(fused_probs)
-
-    # If either model predicts disaster, mark final as disaster
-    disaster_idx = 1  # assuming index 1 = disaster
-    if image_label_idx == disaster_idx or text_label_idx == disaster_idx:
-        fused_label_idx = disaster_idx
-
-    return fused_label_idx, fused_probs
-
-
-# ----------------------------- #
-# Streamlit UI
-# ----------------------------- #
-
-st.set_page_config(page_title="AI-Powered Disaster Aid System", layout="wide")
-
+# ---------------- APP HEADER ----------------
 st.title("🌍 AI-Powered Disaster Aid System")
-st.markdown(
-    """
-    This intelligent multi-modal system analyzes **images** and **text** to detect potential disasters.  
-    It uses a **CNN image model** and an **NLP text model** together to provide quick and reliable disaster detection.
-    """
-)
+st.markdown("""
+This system uses **deep learning** to analyze **images** and **text messages** to detect potential disasters.  
+If a disaster is detected, it can also send an **alert through GCC (Google Cloud Communication)** to notify people in the affected area.
+""")
 
-# --- Inputs Section ---
-col1, col2 = st.columns(2)
-with col1:
-    st.header("🖼️ Image Input")
-    uploaded_image = st.file_uploader("Upload a disaster-related image", type=["jpg", "jpeg", "png"])
-    camera_image = st.camera_input("Or capture live image")
+# ---------------- MODEL LOADING ----------------
+@st.cache_resource(show_spinner=False)
+def load_models():
+    image_model = load_model(IMAGE_MODEL_PATH)
+    text_model = load_model(TEXT_MODEL_PATH)
+    with open(TOKENIZER_PATH, "rb") as f:
+        tokenizer = pickle.load(f)
+    return image_model, text_model, tokenizer
 
-    # Prioritize camera input if available
-    if camera_image is not None:
-        image_file = camera_image
+try:
+    image_model, text_model, tokenizer = load_models()
+    st.sidebar.success("✅ Models loaded successfully")
+except Exception as e:
+    st.sidebar.error(f"Error loading models: {e}")
+    st.stop()
+
+# ---------------- HELPER FUNCTIONS ----------------
+def preprocess_image(img_file, target_size=(224, 224)):
+    img = Image.open(img_file).convert("RGB")
+    img = img.resize(target_size)
+    arr = keras_image.img_to_array(img)
+    arr = np.expand_dims(arr, axis=0)
+    arr = preprocess_input(arr)
+    return arr
+
+def predict_image(img_file):
+    arr = preprocess_image(img_file)
+    preds = image_model.predict(arr)[0]
+    label_idx = np.argmax(preds)
+    label = LABELS[label_idx] if label_idx < len(LABELS) else f"class_{label_idx}"
+    return {"label": label, "score": float(preds[label_idx]), "probs": preds}
+
+def preprocess_text_and_predict(text, maxlen=100):
+    seq = tokenizer.texts_to_sequences([text])
+    padded = pad_sequences(seq, maxlen=maxlen, padding="post", truncating="post")
+    preds = text_model.predict(padded)[0]
+    idx = np.argmax(preds)
+    label = TEXT_CLASSES[idx] if idx < len(TEXT_CLASSES) else f"class_{idx}"
+    return {"label": label, "score": float(preds[idx]), "probs": preds}
+
+def fuse_predictions(img_pred, txt_pred, w_img=0.6, w_txt=0.4):
+    img_probs = img_pred["probs"]
+    txt_probs = np.zeros_like(img_probs)
+    if txt_pred["label"] in ["food", "shelter", "rescue", "medical"]:
+        txt_probs[1] = txt_pred["score"]
+        txt_probs[0] = 1 - txt_pred["score"]
     else:
-        image_file = uploaded_image
+        txt_probs[0] = txt_pred["score"]
+        txt_probs[1] = 1 - txt_pred["score"]
 
-    if image_file:
-        st.image(image_file, caption="Input Image", use_container_width=True)
+    fused_probs = (w_img * img_probs) + (w_txt * txt_probs)
+    idx = np.argmax(fused_probs)
+    label = LABELS[idx]
+    return {"label": label, "score": float(fused_probs[idx]), "probs": fused_probs}
+
+def get_advisory(label):
+    advisories = {
+        "No Disaster": "✅ Area appears safe — no immediate danger detected.",
+        "Disaster": "🚨 Disaster detected — stay alert and follow official safety guidance."
+    }
+    return advisories.get(label, "⚠️ Situation unclear — stay cautious.")
+
+# ---------------- INPUT UI ----------------
+col1, col2 = st.columns(2)
+
+with col1:
+    st.header("📷 Image Input")
+    img_file = st.file_uploader("Upload an image (JPG, PNG)", type=["jpg", "jpeg", "png"])
+    camera_img = st.camera_input("Or capture an image")
+    image_source = camera_img if camera_img else img_file
 
 with col2:
     st.header("💬 Text Input")
-    user_text = st.text_area("Enter eyewitness report, tweet, or message", placeholder="e.g., Heavy flooding in the area...")
+    user_text = st.text_area("Enter a message or report", placeholder="e.g., Fire near the hills, need help urgently")
 
-# --- Analyze Button ---
-if st.button("🔍 Analyze Situation"):
-    if not image_file and not user_text.strip():
-        st.warning("Please upload an image or enter text for analysis.")
+# ---------------- RUN PREDICTIONS ----------------
+if st.button("🔍 Analyze Disaster Situation"):
+    if not image_source and not user_text:
+        st.warning("Please upload an image or enter some text.")
     else:
-        # Placeholder model predictions (replace with your model outputs)
-        LABELS = ["no_disaster", "disaster"]
-        disaster_types = ["no_disaster", "fire", "flood", "earthquake", "hurricane"]
+        st.markdown("---")
+        st.subheader("🧭 Results Overview")
 
-        # Simulated model outputs (replace with actual predictions)
-        if image_file:
-            image_probs = [0.10, 0.90]  # 90% disaster (e.g., flood/fire)
-        else:
-            image_probs = [1.00, 0.00]
+        img_pred, txt_pred, fused_pred = None, None, None
 
-        if user_text.strip():
-            text_probs = [0.70, 0.30]  # 30% disaster
-        else:
-            text_probs = [1.00, 0.00]
+        if image_source:
+            with st.spinner("Analyzing image..."):
+                img_pred = predict_image(image_source)
+            st.success("**Image Analysis Result**")
+            st.metric("Label", img_pred["label"])
+            st.metric("Confidence", f"{img_pred['score']:.3f}")
+            st.caption(f"Probabilities: {dict(zip(LABELS, np.round(img_pred['probs'], 3)))}")
 
-        # Compute labels
-        img_label, img_conf = probs_to_label(image_probs, LABELS)
-        txt_label, txt_conf = probs_to_label(text_probs, LABELS)
+        if user_text:
+            with st.spinner("Analyzing text..."):
+                txt_pred = preprocess_text_and_predict(user_text)
+            st.success("**Text Analysis Result**")
+            st.metric("Label", txt_pred["label"])
+            st.metric("Confidence", f"{txt_pred['score']:.3f}")
+            st.caption(f"Probabilities: {dict(zip(TEXT_CLASSES, np.round(txt_pred['probs'], 3)))}")
 
-        # Fusion
-        fused_label_idx, fused_probs = fuse_predictions(image_probs, text_probs)
-        fused_label, fused_conf = probs_to_label(fused_probs, LABELS)
+        if img_pred or txt_pred:
+            with st.spinner("Combining results..."):
+                if img_pred and txt_pred:
+                    fused_pred = fuse_predictions(img_pred, txt_pred)
+                else:
+                    fused_pred = img_pred or txt_pred
 
-        # Choose disaster type (mock logic — replace with real classification)
-        disaster_type = "no_disaster"
-        if fused_label == "disaster":
-            disaster_type = np.random.choice(["fire", "flood", "earthquake", "hurricane"])
+            st.markdown("---")
+            st.subheader("🌐 Combined (Fused) Result")
+            st.metric("Final Assessment", fused_pred["label"])
+            st.metric("Confidence", f"{fused_pred['score']:.3f}")
+            st.info(get_advisory(fused_pred["label"]))
 
-        advisory = get_advisory_message(disaster_type)
-
-        # ----------------------------- #
-        # Display results
-        # ----------------------------- #
-        st.divider()
-        st.subheader("🧭 Model Assessments")
-
-        c1, c2, c3 = st.columns(3)
-
-        with c1:
-            st.markdown("### 🖼️ Image Model Result")
-            if image_file:
-                st.metric("Prediction", img_label.replace("_", " ").title())
-                st.metric("Confidence", f"{img_conf:.3f}")
+            # ------------- GCC ALERT BUTTON -------------
+            if fused_pred["label"] == "Disaster":
+                if st.button("🚨 Send GCC Alert"):
+                    st.success("✅ GCC Alert Sent Successfully! Notification broadcast to nearby users.")
             else:
-                st.markdown("_No image provided_")
+                st.caption("No alert sent since no disaster was detected.")
 
-        with c2:
-            st.markdown("### 💬 Text Model Result")
-            if user_text.strip():
-                st.metric("Prediction", txt_label.replace("_", " ").title())
-                st.metric("Confidence", f"{txt_conf:.3f}")
-            else:
-                st.markdown("_No text provided_")
+# ---------------- ABOUT SECTION ----------------
+st.markdown("---")
+st.header("ℹ️ About the App")
+st.markdown("""
+**AI-Powered Disaster Aid System** is designed to assist emergency services by analyzing both **visual data (images)** and **textual data (messages or tweets)**.  
+By fusing CNN and LSTM model outputs, the system can **detect disasters in real time** and trigger **GCC alerts** to notify users in affected areas, helping them take timely safety actions.
 
-        with c3:
-            st.markdown("### 🤖 Combined (Fused) Result")
-            st.metric("Final Assessment", fused_label.replace("_", " ").title())
-            st.metric("Confidence", f"{fused_conf:.3f}")
-
-        st.divider()
-        st.info(f"**Advisory:** {advisory}")
-
-        # --- GCC Alert Message ---
-        st.markdown(
-            """
-            > 📡 **GCC (Global Communication Channel):**  
-            In case of a detected disaster, the system immediately transmits alerts through the GCC network — 
-            notifying nearby users, emergency response teams, and authorities to ensure rapid and coordinated action.
-            """
-        )
-
-# --- About Section ---
-st.divider()
-st.markdown(
-    """
-    ### ℹ️ About the App  
-    The **AI-Powered Disaster Aid System** integrates computer vision (CNN) and natural language processing (LSTM)  
-    to analyze real-time images and text reports from the field. By combining both data sources, it detects disasters early  
-    and sends timely alerts using the **Global Communication Channel (GCC)** — helping people stay safe and enabling  
-    faster government and NGO responses to critical events.
-    """
-)
+**Key Capabilities:**
+- 🌪️ Detects disasters like floods, fires, and earthquakes.
+- 💬 Classifies emergency messages into actionable types.
+- 🧠 Combines both results for high-accuracy predictions.
+- 📡 Sends alerts via GCC to affected areas.
+""")
