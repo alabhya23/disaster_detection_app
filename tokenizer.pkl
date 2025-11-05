@@ -1,0 +1,5 @@
+# ✅ Save tokenizer after fitting it on your text data
+import pickle
+
+with open("tokenizer.pkl", "wb") as f:
+    pickle.dump(tokenizer, f)
