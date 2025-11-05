@@ -239,11 +239,11 @@ if analyze_btn:
             st.info("Only text available — using text model output.")
             
             if fused_probs is not None:
-    # normalize fused
-    if fused_probs.sum() > 0:
-        fused_probs = fused_probs / fused_probs.sum()
-    idx = int(np.argmax(fused_probs))
-    # prevent out-of-range label lookup
+            # normalize fused
+                if fused_probs.sum() > 0:
+                    fused_probs = fused_probs / fused_probs.sum()
+                    idx = int(np.argmax(fused_probs))
+                    # prevent out-of-range label lookup
     label = LABELS[idx] if idx < len(LABELS) else "Disaster"
     conf = float(fused_probs[idx])
 
