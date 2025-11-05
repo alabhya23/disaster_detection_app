@@ -1,5 +1,6 @@
 import streamlit as st
 import numpy as np
+from PIL import Image
 
 # ----------------------------- #
 # Helper functions
@@ -15,7 +16,7 @@ def get_advisory_message(disaster_type):
         "flood": "🌊 Flooding reported — move to higher ground and avoid floodwater.",
         "earthquake": "🌍 Earthquake detected — stay in open areas and avoid tall structures.",
         "hurricane": "🌪️ Severe storm detected — take shelter and follow official alerts.",
-        "no_disaster": "✅ Area is safe — no disaster detected at the moment."
+        "no_disaster": "✅ Area appears safe — no signs of disaster detected."
     }
     return messages.get(disaster_type, "⚠️ Situation uncertain — stay alert and follow safety protocols.")
 
@@ -28,12 +29,13 @@ def fuse_predictions(image_probs, text_probs, image_weight=0.6, text_weight=0.4)
     text_label_idx = np.argmax(text_probs)
     fused_label_idx = np.argmax(fused_probs)
 
-    # If either predicts a disaster, mark final as disaster
+    # If either model predicts disaster, mark final as disaster
     disaster_idx = 1  # assuming index 1 = disaster
     if image_label_idx == disaster_idx or text_label_idx == disaster_idx:
         fused_label_idx = disaster_idx
 
     return fused_label_idx, fused_probs
+
 
 # ----------------------------- #
 # Streamlit UI
@@ -43,42 +45,65 @@ st.set_page_config(page_title="AI-Powered Disaster Aid System", layout="wide")
 
 st.title("🌍 AI-Powered Disaster Aid System")
 st.markdown(
-    "This intelligent system analyzes **images and text** to detect potential disasters. "
-    "It combines a **CNN image model** and an **NLP text model** into a unified decision system."
+    """
+    This intelligent multi-modal system analyzes **images** and **text** to detect potential disasters.  
+    It uses a **CNN image model** and an **NLP text model** together to provide quick and reliable disaster detection.
+    """
 )
 
-# --- Inputs ---
+# --- Inputs Section ---
 col1, col2 = st.columns(2)
 with col1:
     st.header("🖼️ Image Input")
-    image_file = st.file_uploader("Upload a disaster-related image", type=["jpg", "jpeg", "png"])
+    uploaded_image = st.file_uploader("Upload a disaster-related image", type=["jpg", "jpeg", "png"])
+    camera_image = st.camera_input("Or capture live image")
+
+    # Prioritize camera input if available
+    if camera_image is not None:
+        image_file = camera_image
+    else:
+        image_file = uploaded_image
+
     if image_file:
-        st.image(image_file, caption="Uploaded Image", use_container_width=True)
+        st.image(image_file, caption="Input Image", use_container_width=True)
 
 with col2:
     st.header("💬 Text Input")
-    user_text = st.text_area("Enter eyewitness report, tweet, or message", placeholder="e.g., heavy flooding in the area")
+    user_text = st.text_area("Enter eyewitness report, tweet, or message", placeholder="e.g., Heavy flooding in the area...")
 
 # --- Analyze Button ---
 if st.button("🔍 Analyze Situation"):
-    if image_file or user_text:
-        # Mock probabilities for demonstration
+    if not image_file and not user_text.strip():
+        st.warning("Please upload an image or enter text for analysis.")
+    else:
+        # Placeholder model predictions (replace with your model outputs)
         LABELS = ["no_disaster", "disaster"]
-        image_probs = [0.05, 0.95]      # Example: CNN says 95% disaster
-        text_probs = [0.80, 0.20]       # Example: NLP says 80% no disaster
+        disaster_types = ["no_disaster", "fire", "flood", "earthquake", "hurricane"]
 
-        # Individual results
+        # Simulated model outputs (replace with actual predictions)
+        if image_file:
+            image_probs = [0.10, 0.90]  # 90% disaster (e.g., flood/fire)
+        else:
+            image_probs = [1.00, 0.00]
+
+        if user_text.strip():
+            text_probs = [0.70, 0.30]  # 30% disaster
+        else:
+            text_probs = [1.00, 0.00]
+
+        # Compute labels
         img_label, img_conf = probs_to_label(image_probs, LABELS)
         txt_label, txt_conf = probs_to_label(text_probs, LABELS)
 
-        # Fused result
+        # Fusion
         fused_label_idx, fused_probs = fuse_predictions(image_probs, text_probs)
         fused_label, fused_conf = probs_to_label(fused_probs, LABELS)
 
-        # Decide disaster type (you can replace this with class-specific detection)
-        disaster_type = "fire" if fused_label == "disaster" else "no_disaster"
+        # Choose disaster type (mock logic — replace with real classification)
+        disaster_type = "no_disaster"
+        if fused_label == "disaster":
+            disaster_type = np.random.choice(["fire", "flood", "earthquake", "hurricane"])
 
-        # Advisory
         advisory = get_advisory_message(disaster_type)
 
         # ----------------------------- #
@@ -91,13 +116,19 @@ if st.button("🔍 Analyze Situation"):
 
         with c1:
             st.markdown("### 🖼️ Image Model Result")
-            st.metric("Prediction", img_label.replace("_", " ").title())
-            st.metric("Confidence", f"{img_conf:.3f}")
+            if image_file:
+                st.metric("Prediction", img_label.replace("_", " ").title())
+                st.metric("Confidence", f"{img_conf:.3f}")
+            else:
+                st.markdown("_No image provided_")
 
         with c2:
             st.markdown("### 💬 Text Model Result")
-            st.metric("Prediction", txt_label.replace("_", " ").title())
-            st.metric("Confidence", f"{txt_conf:.3f}")
+            if user_text.strip():
+                st.metric("Prediction", txt_label.replace("_", " ").title())
+                st.metric("Confidence", f"{txt_conf:.3f}")
+            else:
+                st.markdown("_No text provided_")
 
         with c3:
             st.markdown("### 🤖 Combined (Fused) Result")
@@ -107,9 +138,23 @@ if st.button("🔍 Analyze Situation"):
         st.divider()
         st.info(f"**Advisory:** {advisory}")
 
+        # --- GCC Alert Message ---
         st.markdown(
-            "> 📡 Using GCC communication, alerts can be automatically sent to nearby users and authorities to ensure timely disaster response and community safety."
+            """
+            > 📡 **GCC (Global Communication Channel):**  
+            In case of a detected disaster, the system immediately transmits alerts through the GCC network — 
+            notifying nearby users, emergency response teams, and authorities to ensure rapid and coordinated action.
+            """
         )
 
-    else:
-        st.warning("Please upload an image or enter text for analysis.")
+# --- About Section ---
+st.divider()
+st.markdown(
+    """
+    ### ℹ️ About the App  
+    The **AI-Powered Disaster Aid System** integrates computer vision (CNN) and natural language processing (LSTM)  
+    to analyze real-time images and text reports from the field. By combining both data sources, it detects disasters early  
+    and sends timely alerts using the **Global Communication Channel (GCC)** — helping people stay safe and enabling  
+    faster government and NGO responses to critical events.
+    """
+)
