@@ -353,6 +353,4 @@ if run:
 # ---------------- Deployment / requirements hint ----------------
 st.markdown("---")
 st.header("Deployment & requirements")
-st.markdown(
-    """
-Save this file as `app.py` and run:
+st.markdown
