@@ -39,8 +39,27 @@ def preprocess_image(pil_img):
 
 
 def probs_to_label(probs):
+    """Return label safely, handling mismatched or 1D outputs."""
+    if probs is None or len(probs) == 0:
+        return "Unknown", 0.0
+    probs = np.array(probs).flatten()
+    probs = probs / np.sum(probs) if np.sum(probs) > 0 else probs
     idx = int(np.argmax(probs))
+    if idx >= len(LABELS):
+        idx = min(idx, len(LABELS) - 1)
     return LABELS[idx], float(probs[idx])
+
+
+def normalize_probs(p):
+    """Ensure probs are a 2-element vector for fusion."""
+    if p is None:
+        return None
+    p = np.array(p).flatten()
+    if p.size == 1:
+        p = np.array([1 - float(p), float(p)])
+    elif p.size > 2:
+        p = p[:2] / np.sum(p[:2])
+    return p
 
 
 def get_precaution_message(label):
@@ -85,33 +104,31 @@ img_probs = None
 txt_probs = None
 fused_probs = None
 
+# Image prediction
 if image_model is not None:
     if img_file or camera_img:
         try:
             image_data = Image.open(img_file if img_file else camera_img)
             arr = preprocess_image(image_data)
-            img_probs = np.squeeze(image_model.predict(arr))
-            if img_probs.size == 1:  # Binary output
-                p = float(img_probs)
-                img_probs = np.array([1 - p, p])
+            preds = np.squeeze(image_model.predict(arr))
+            img_probs = normalize_probs(preds)
         except Exception as e:
             st.error(f"Image prediction failed: {e}")
 
+# Text prediction
 if text_model is not None and tokenizer is not None and user_text.strip() != "":
     try:
         seq = tokenizer.texts_to_sequences([user_text])
         pad = pad_sequences(seq, maxlen=DEFAULT_TEXT_MAXLEN, padding="post", truncating="post")
-        txt_probs = np.squeeze(text_model.predict(pad))
-        if txt_probs.size == 1:
-            p = float(txt_probs)
-            txt_probs = np.array([1 - p, p])
+        preds = np.squeeze(text_model.predict(pad))
+        txt_probs = normalize_probs(preds)
     except Exception as e:
         st.error(f"Text prediction failed: {e}")
 
 # -------------------- RESULTS --------------------
 st.markdown("---")
 
-# Show individual predictions
+# Individual model results
 if img_probs is not None:
     img_label, img_conf = probs_to_label(img_probs)
     st.subheader("🖼️ Image Model Prediction")
@@ -128,42 +145,45 @@ if txt_probs is not None:
 else:
     st.info("No text provided yet.")
 
-# Fused (combined) prediction
+# Fused prediction
 st.markdown("---")
 st.subheader("🔗 Fused Multi-Modal Prediction")
 
 img_weight, txt_weight = 0.6, 0.4
-if img_probs is not None and txt_probs is not None:
-    fused_probs = img_weight * img_probs + txt_weight * txt_probs
-elif img_probs is not None:
-    fused_probs = img_probs
-elif txt_probs is not None:
-    fused_probs = txt_probs
 
-if fused_probs is not None:
-    fused_label, fused_conf = probs_to_label(fused_probs)
-    st.metric("Final Assessment", fused_label, f"{fused_conf:.3f}")
-    st.progress(float(fused_conf))
+try:
+    if img_probs is not None and txt_probs is not None:
+        fused_probs = img_weight * np.array(img_probs) + txt_weight * np.array(txt_probs)
+    elif img_probs is not None:
+        fused_probs = img_probs
+    elif txt_probs is not None:
+        fused_probs = txt_probs
 
-    # Show precaution message
-    precaution = get_precaution_message(fused_label)
-    st.info(precaution)
+    if fused_probs is not None:
+        fused_probs = normalize_probs(fused_probs)
+        fused_label, fused_conf = probs_to_label(fused_probs)
+        st.metric("Final Assessment", fused_label, f"{fused_conf:.3f}")
+        st.progress(float(fused_conf))
 
-    # GCC Alert button
-    if "Disaster" in fused_label:
-        if st.button("🚨 Send GCC Alert"):
-            st.success("✅ Alert sent to nearby authorities and users in the affected area!")
-else:
-    st.warning("Please provide image or text input to generate predictions.")
+        # Precaution
+        precaution = get_precaution_message(fused_label)
+        st.info(precaution)
+
+        # GCC Alert
+        if "Disaster" in fused_label:
+            if st.button("🚨 Send GCC Alert"):
+                st.success("✅ Alert sent to authorities and local users!")
+    else:
+        st.warning("Please provide image or text input to generate predictions.")
+except Exception as e:
+    st.error(f"Fusion failed safely: {e}")
 
 # -------------------- ABOUT --------------------
 st.markdown("---")
 st.markdown("### 🧭 About the App")
 st.write(
-    "The **AI-Powered Disaster Aid System** analyzes both images and text messages to detect ongoing disasters. "
-    "It integrates CNN and LSTM-based models to identify patterns and provide real-time alerts. "
-    "Using GCC (Global Command Center) integration, alerts are sent to users and authorities, "
-    "helping them take timely action and stay safe."
+    "The **AI-Powered Disaster Aid System** uses CNN (for images) and LSTM (for text) models to detect potential disasters. "
+    "The system fuses both image and text information to improve accuracy and can trigger GCC (Global Command Center) alerts "
+    "for real-time disaster response."
 )
-
-st.caption("Developed for Smart Disaster Management and Sustainable Development Goals (SDG 11 & 13). 🌍")
+st.caption("Developed to support SDG 11 (Sustainable Cities) and SDG 13 (Climate Action). 🌍")
