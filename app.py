@@ -193,4 +193,3 @@ if st.button("Analyze Situation"):
 st.markdown("---")
 st.header("📡 About the System")
 st.markdown
-)
