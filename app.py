@@ -237,44 +237,62 @@ if analyze_btn:
         elif txt_probs is not None:
             fused_probs = txt_probs
             st.info("Only text available — using text model output.")
+            
+            if fused_probs is not None:
+    # normalize fused
+    if fused_probs.sum() > 0:
+        fused_probs = fused_probs / fused_probs.sum()
+    idx = int(np.argmax(fused_probs))
+    # prevent out-of-range label lookup
+    label = LABELS[idx] if idx < len(LABELS) else "Disaster"
+    conf = float(fused_probs[idx])
 
-        if fused_probs is not None:
-            # normalize fused
-            if fused_probs.sum() > 0:
-                fused_probs = fused_probs / fused_probs.sum()
-            label, conf = probs_to_label(fused_probs)
-            # large result presentation
-            rcol1, rcol2 = st.columns([0.6, 0.4])
-            with rcol1:
-                st.markdown(f"### ✅ Final Assessment: **{label}**")
-                st.metric("Confidence", f"{conf:.3f}")
-                # bar-like probs (for first few classes)
-                st.write("**Class probabilities:**")
-                for i, p in enumerate(fused_probs):
-                    name = LABELS[i] if i < len(LABELS) else f"class_{i}"
-                    st.write(f"- {name}: {p:.3f}")
-            with rcol2:
-                # simple visual: progress of disaster probability if second index corresponds to 'Disaster'
-                disaster_prob = fused_probs[1] if len(fused_probs) > 1 else 0.0
-                st.progress(min(max(float(disaster_prob), 0.0), 1.0))
-                st.caption("Disaster likelihood")
+    # large result presentation
+    rcol1, rcol2 = st.columns([0.6, 0.4])
+    with rcol1:
+        st.markdown(f"### ✅ Final Assessment: **{label}**")
+        st.metric("Confidence", f"{conf:.3f}")
 
-            # show breakdown
-            st.markdown("**Fusion breakdown**")
-            st.write(f"- Image weight used: {w_img:.2f}")
-            st.write(f"- Text weight used: {w_txt:.2f}")
-            if img_probs is not None:
-                st.write("📷 Image probabilities:", np.round(img_probs, 4))
-            if txt_probs is not None:
-                st.write("📝 Text probabilities:", np.round(txt_probs, 4))
-        else:
-            st.warning("Model outputs were not available. Check that models/tokenizer are loaded in the sidebar.")
+        # show only relevant probabilities
+        st.write("**Class probabilities:**")
+        for i, p in enumerate(fused_probs):
+            if p < 0.01:  # skip near-zero classes
+                continue
+            name = LABELS[i] if i < len(LABELS) else f"Class {i+1}"
+            st.write(f"- {name}: {p:.3f}")
+
+    with rcol2:
+        disaster_prob = fused_probs[1] if len(fused_probs) > 1 else 0.0
+        st.progress(min(max(float(disaster_prob), 0.0), 1.0))
+        st.caption("Disaster likelihood")
+
+    # 🆕 Smart advisory message
+    if label.lower().startswith("disaster") or conf > 0.7:
+        advisory = "⚠️ **Potential disaster detected!** Stay alert and follow safety protocols."
+        if user_text:
+            text_lower = user_text.lower()
+            if "fire" in text_lower or "burn" in text_lower:
+                advisory = "🔥 **Fire detected!** Stay away from flames, move to open areas, and contact emergency services."
+            elif "flood" in text_lower or "water" in text_lower or "rain" in text_lower:
+                advisory = "🌊 **Flooding detected!** Move to higher ground and avoid walking through flood water."
+            elif "earthquake" in text_lower or "shake" in text_lower:
+                advisory = "🏚️ **Possible earthquake!** Take cover under sturdy furniture and move away from windows."
+            elif "storm" in text_lower or "cyclone" in text_lower or "hurricane" in text_lower:
+                advisory = "🌪️ **Severe storm detected!** Stay indoors, secure windows, and avoid traveling."
+        st.markdown(f"<div class='section-card'>{advisory}</div>", unsafe_allow_html=True)
+    else:
+        st.success("✅ Area appears safe. No immediate disaster detected.")
+
+    # show breakdown (optional but cleaner)
+    st.markdown("**Fusion breakdown**")
+    st.write(f"- Image weight used: {w_img:.2f}")
+    st.write(f"- Text weight used: {w_txt:.2f}")
+    if img_probs is not None:
+        st.write("📷 Image probabilities:", np.round(img_probs[:len(LABELS)], 3))
+    if txt_probs is not None:
+        st.write("📝 Text probabilities:", np.round(txt_probs[:len(LABELS)], 3))
 else:
-    # idle state — show short help
-    st.markdown("### Ready to analyze")
-    st.write("Provide an image and/or text then click **Analyze and Fuse**. Adjust fusion weights in the sidebar to prefer image or text evidence.")
-
-st.markdown('</div>', unsafe_allow_html=True)
+    st.warning("Model outputs were not available. Check that models/tokenizer are loaded in the sidebar.")
 
 # --- Footer description
 st.markdown("---")
