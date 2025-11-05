@@ -1,3 +1,12 @@
+import pickle
+
+try:
+    with open("tokenizer.pkl", "rb") as f:
+        tokenizer = pickle.load(f)
+    print("✅ Tokenizer loaded successfully!")
+except Exception as e:
+    print("❌ Tokenizer load failed:", e)
+
 import streamlit as st
 import tensorflow as tf
 from tensorflow.keras.preprocessing.sequence import pad_sequences
