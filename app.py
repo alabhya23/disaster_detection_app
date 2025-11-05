@@ -17,12 +17,17 @@ from tensorflow.keras.preprocessing.text import tokenizer_from_json
 # ------------------------------------------------------------
 @st.cache_resource
 def load_models():
-    text_model = tf.keras.models.load_model("disaster_text_bilstm.keras")
-    image_model = tf.keras.models.load_model("disaster_cnn_mobilenet.keras")
+    import tensorflow as tf
+    import pickle
 
-    # Load tokenizer
-    with open("tokenizer.json") as f:
-        tokenizer = tokenizer_from_json(json.load(f))
+    # ✅ Force legacy Keras 2 deserialization for .h5
+    from tensorflow.keras import models
+    text_model = models.load_model("disaster_text_bilstm.h5", compile=False)
+    image_model = models.load_model("disaster_cnn_mobilenet_clean.h5", compile=False)
+
+    # ✅ Load tokenizer (safe binary read)
+    with open("tokenizer.pkl", "rb") as f:
+        tokenizer = pickle.load(f)
 
     return text_model, image_model, tokenizer
 
