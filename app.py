@@ -9,23 +9,19 @@ import pickle, re
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 from tensorflow.keras.preprocessing import image
 from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
-import json
-from tensorflow.keras.preprocessing.text import tokenizer_from_json
-
+from tensorflow.keras import models
+import pickle
+import streamlit as st
 # ------------------------------------------------------------
 # 1️⃣ Load Saved Models and Tokenizer
 # ------------------------------------------------------------
 @st.cache_resource
 def load_models():
-    import tensorflow as tf
-    import pickle
-
-    # ✅ Force legacy Keras 2 deserialization for .h5
-    from tensorflow.keras import models
+    # load the models saved in .h5 format
     text_model = models.load_model("disaster_text_bilstm.h5", compile=False)
     image_model = models.load_model("disaster_cnn_mobilenet_clean.h5", compile=False)
 
-    # ✅ Load tokenizer (safe binary read)
+    # load the tokenizer saved with pickle
     with open("tokenizer.pkl", "rb") as f:
         tokenizer = pickle.load(f)
 
