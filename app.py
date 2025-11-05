@@ -9,20 +9,22 @@ import pickle, re
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 from tensorflow.keras.preprocessing import image
 from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
+import json
+from tensorflow.keras.preprocessing.text import tokenizer_from_json
 
 # ------------------------------------------------------------
 # 1️⃣ Load Saved Models and Tokenizer
 # ------------------------------------------------------------
 @st.cache_resource
 def load_models():
-    text_model = tf.keras.models.load_model("disaster_text_bilstm.h5")
-    image_model = tf.keras.models.load_model("disaster_cnn_mobilenet_clean.h5")
-    with open("tokenizer.pkl", "rb") as f:
-        tokenizer = pickle.load(f)
-    return text_model, image_model, tokenizer
+    text_model = tf.keras.models.load_model("disaster_text_bilstm.keras")
+    image_model = tf.keras.models.load_model("disaster_cnn_mobilenet.keras")
 
-text_model, image_model, tokenizer = load_models()
-st.sidebar.success("✅ Models Loaded Successfully!")
+    # Load tokenizer
+    with open("tokenizer.json") as f:
+        tokenizer = tokenizer_from_json(json.load(f))
+
+    return text_model, image_model, tokenizer
 
 # ------------------------------------------------------------
 # 2️⃣ Helper Functions
