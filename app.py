@@ -85,7 +85,7 @@ st.sidebar.header("Model Status")
 image_model, text_model, tokenizer = load_local_models()
 
 # -------------------- APP HEADER --------------------
-st.title("🧠 AI-Powered Disaster Aid System")
+st.title("AI-Powered Disaster Aid System")
 st.write(
     "This system uses **AI + Deep Learning** to detect disasters from **images and text messages**. "
     "It helps authorities and users receive timely alerts and take preventive actions."
@@ -93,10 +93,10 @@ st.write(
 
 # -------------------- USER INPUTS --------------------
 st.markdown("### 📸 Upload or Capture Image")
-img_file = st.file_uploader("Upload a disaster image", type=["jpg", "jpeg", "png"])
+img_file = st.file_uploader("Upload a image", type=["jpg", "jpeg", "png"])
 camera_img = st.camera_input("Or capture using camera")
 
-st.markdown("### 💬 Enter Disaster-Related Text")
+st.markdown("### 💬 Enter Text")
 user_text = st.text_area("Enter message or tweet (optional)", height=100)
 
 # -------------------- PREDICTIONS --------------------
