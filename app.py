@@ -13,13 +13,11 @@ TEXT_MODEL_PATH = "disaster_text_bilstm.h5"
 TOKENIZER_PATH = "tokenizer.pkl"
 DEFAULT_TEXT_MAXLEN = 30
 
-# Actual trained classes in your dataset
+# Classes your model was trained on
 DISASTER_TYPES = ["Flood", "Fire", "Earthquake", "Hurricane", "Drought", "Landslide"]
-LABELS = ["Safe / No Disaster", "Disaster"]
 
 # -------------------- HELPERS --------------------
 def load_local_models():
-    """Load models and tokenizer safely."""
     try:
         image_model = load_model(IMAGE_MODEL_PATH)
         text_model = load_model(TEXT_MODEL_PATH)
@@ -39,7 +37,6 @@ def preprocess_image(pil_img):
 
 
 def normalize_probs(p):
-    """Normalize probability vector."""
     p = np.array(p).flatten()
     if np.sum(p) == 0:
         return np.zeros_like(p)
@@ -47,7 +44,6 @@ def normalize_probs(p):
 
 
 def get_precaution_message(d_type):
-    """Return short caption for detected disaster."""
     d_type = d_type.lower()
     if "fire" in d_type:
         return "🔥 Fire detected — Stay low, cover mouth, and evacuate safely."
@@ -67,21 +63,27 @@ def get_precaution_message(d_type):
 
 def classify_disaster(probs, threshold=0.6):
     """
-    Convert model output to binary label and disaster type.
-    If max probability < threshold → Safe
-    Else → Disaster + disaster type
+    Smarter classifier with top-2 confidence check.
+    Returns: Safe/Disaster, [possible types], confidence
     """
     if probs is None or len(probs) == 0:
-        return "Unknown", "None", 0.0
+        return "Unknown", [], 0.0
 
     probs = normalize_probs(probs)
-    idx = int(np.argmax(probs))
-    conf = float(probs[idx])
+    idx_sorted = np.argsort(probs)[::-1]
+    top1, top2 = idx_sorted[0], idx_sorted[1]
+    conf1, conf2 = probs[top1], probs[top2]
 
-    if conf < threshold:
-        return "Safe / No Disaster", "None", conf
+    if conf1 < threshold:
+        return "Safe / No Disaster", [], conf1
+
+    # If top two classes are close, show both
+    if abs(conf1 - conf2) < 0.15:
+        types = [DISASTER_TYPES[top1], DISASTER_TYPES[top2]]
     else:
-        return "Disaster", DISASTER_TYPES[idx % len(DISASTER_TYPES)], conf
+        types = [DISASTER_TYPES[top1]]
+
+    return "Disaster", types, conf1
 
 
 # -------------------- LOAD MODELS --------------------
@@ -90,7 +92,7 @@ image_model, text_model, tokenizer = load_local_models()
 
 # -------------------- UI HEADER --------------------
 st.title("🧠 AI-Powered Disaster Aid System")
-st.write("AI system that detects disasters from **images and text** and provides safety precautions.")
+st.write("AI system that detects disasters from **images and text**, and provides safety precautions.")
 
 # -------------------- INPUTS --------------------
 st.markdown("### 📸 Upload or Capture Image")
@@ -129,22 +131,24 @@ st.markdown("---")
 
 # IMAGE RESULT
 if img_probs is not None:
-    img_label, img_type, img_conf = classify_disaster(img_probs)
+    img_label, img_types, img_conf = classify_disaster(img_probs)
     st.subheader("🖼️ Image Model Result")
     st.metric("Status", img_label, f"{img_conf:.3f}")
     if img_label == "Disaster":
-        st.caption(get_precaution_message(img_type))
+        st.caption(f"Detected: {', '.join(img_types)}")
+        st.info(get_precaution_message(img_types[0]))
     st.progress(float(img_conf))
 else:
     st.info("Upload or capture an image to analyze.")
 
 # TEXT RESULT
 if txt_probs is not None:
-    txt_label, txt_type, txt_conf = classify_disaster(txt_probs)
+    txt_label, txt_types, txt_conf = classify_disaster(txt_probs)
     st.subheader("💬 Text Model Result")
     st.metric("Status", txt_label, f"{txt_conf:.3f}")
     if txt_label == "Disaster":
-        st.caption(get_precaution_message(txt_type))
+        st.caption(f"Detected: {', '.join(txt_types)}")
+        st.info(get_precaution_message(txt_types[0]))
     st.progress(float(txt_conf))
 else:
     st.info("Enter some text to analyze.")
@@ -163,12 +167,13 @@ try:
         fused_probs = txt_probs
 
     if fused_probs is not None:
-        label, d_type, conf = classify_disaster(fused_probs, threshold=0.6)
+        label, types, conf = classify_disaster(fused_probs, threshold=0.6)
         st.metric("Final Assessment", label, f"{conf:.3f}")
         st.progress(float(conf))
 
         if label == "Disaster":
-            st.info(get_precaution_message(d_type))
+            st.caption(f"Detected: {', '.join(types)}")
+            st.info(get_precaution_message(types[0]))
             if st.button("🚨 Send GCC Alert"):
                 st.success("✅ GCC Alert sent successfully to authorities and users nearby!")
         else:
