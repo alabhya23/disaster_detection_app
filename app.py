@@ -180,10 +180,10 @@ except Exception as e:
 
 # -------------------- ABOUT --------------------
 st.markdown("---")
-st.markdown("### 🧭 About the App")
+st.markdown("### About the App")
 st.write(
     "The **AI-Powered Disaster Aid System** uses CNN (for images) and LSTM (for text) models to detect potential disasters. "
     "The system fuses both image and text information to improve accuracy and can trigger GCC (Global Command Center) alerts "
     "for real-time disaster response."
 )
-st.caption("Developed to support SDG 11 (Sustainable Cities) and SDG 13 (Climate Action). 🌍")
+st.caption("Developed to support SDG 11 (Sustainable Cities) and SDG 13 (Climate Action). ")
