@@ -186,4 +186,3 @@ st.write(
     "The system fuses both image and text information to improve accuracy and can trigger GCC (Global Command Center) alerts "
     "for real-time disaster response."
 )
-st.caption("Developed to support SDG 11 (Sustaina
