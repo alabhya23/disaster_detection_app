@@ -1,7 +1,6 @@
 import streamlit as st
 import numpy as np
 import pickle
-import os
 from keras.models import load_model
 from keras.preprocessing.sequence import pad_sequences
 from PIL import Image
@@ -14,16 +13,9 @@ TEXT_MODEL_PATH = "disaster_text_bilstm.h5"
 TOKENIZER_PATH = "tokenizer.pkl"
 DEFAULT_TEXT_MAXLEN = 30
 
-# Updated label set — these should match your training classes
-LABELS = [
-    "Safe / No Disaster",
-    "Flood",
-    "Fire",
-    "Earthquake",
-    "Hurricane",
-    "Drought",
-    "Landslide"
-]
+# Actual trained classes in your dataset
+DISASTER_TYPES = ["Flood", "Fire", "Earthquake", "Hurricane", "Drought", "Landslide"]
+LABELS = ["Safe / No Disaster", "Disaster"]
 
 # -------------------- HELPERS --------------------
 def load_local_models():
@@ -43,67 +35,67 @@ def load_local_models():
 def preprocess_image(pil_img):
     img = pil_img.convert("RGB").resize((224, 224))
     arr = np.array(img) / 255.0
-    arr = np.expand_dims(arr, axis=0)
-    return arr
-
-
-def probs_to_label(probs):
-    """Safely return the label and confidence score."""
-    if probs is None or len(probs) == 0:
-        return "Unknown", 0.0
-    probs = np.array(probs).flatten()
-    probs = probs / np.sum(probs) if np.sum(probs) > 0 else probs
-    idx = int(np.argmax(probs))
-    idx = min(idx, len(LABELS) - 1)
-    return LABELS[idx], float(probs[idx])
+    return np.expand_dims(arr, axis=0)
 
 
 def normalize_probs(p):
-    """Normalize probabilities to sum to 1."""
-    if p is None:
-        return None
+    """Normalize probability vector."""
     p = np.array(p).flatten()
     if np.sum(p) == 0:
-        return np.ones(len(LABELS)) / len(LABELS)
+        return np.zeros_like(p)
     return p / np.sum(p)
 
 
-def get_precaution_message(label):
-    """Return specific precaution message for each disaster."""
-    label = label.lower()
-    if "fire" in label:
-        return "🔥 **Fire detected!** Stay away from flames, turn off gas sources, and evacuate immediately."
-    elif "flood" in label:
-        return "🌊 **Flood detected!** Move to higher ground, avoid walking or driving through floodwater."
-    elif "earthquake" in label:
-        return "🌍 **Earthquake detected!** Drop, cover, and hold on. Stay away from buildings and heavy objects."
-    elif "hurricane" in label or "storm" in label:
-        return "🌪️ **Severe storm detected!** Stay indoors, close windows, and keep emergency supplies ready."
-    elif "landslide" in label:
-        return "🏔️ **Landslide risk detected!** Move to stable ground and avoid steep slopes."
-    elif "drought" in label:
-        return "☀️ **Drought detected!** Conserve water, avoid unnecessary irrigation, and store drinking water safely."
-    elif "safe" in label or "no disaster" in label:
-        return "✅ **No disaster detected.** Stay alert and monitor weather updates."
+def get_precaution_message(d_type):
+    """Return short caption for detected disaster."""
+    d_type = d_type.lower()
+    if "fire" in d_type:
+        return "🔥 Fire detected — Stay low, cover mouth, and evacuate safely."
+    elif "flood" in d_type:
+        return "🌊 Flood detected — Move to higher ground and avoid floodwater."
+    elif "earthquake" in d_type:
+        return "🌍 Earthquake detected — Drop, cover, and hold on."
+    elif "hurricane" in d_type or "storm" in d_type:
+        return "🌪️ Storm detected — Stay indoors and secure loose objects."
+    elif "landslide" in d_type:
+        return "🏔️ Landslide detected — Move away from slopes and unstable ground."
+    elif "drought" in d_type:
+        return "☀️ Drought detected — Conserve and store water safely."
     else:
-        return "⚠️ **Potential hazard detected.** Follow local authority instructions."
+        return "⚠️ Potential hazard detected. Stay alert."
+
+
+def classify_disaster(probs, threshold=0.6):
+    """
+    Convert model output to binary label and disaster type.
+    If max probability < threshold → Safe
+    Else → Disaster + disaster type
+    """
+    if probs is None or len(probs) == 0:
+        return "Unknown", "None", 0.0
+
+    probs = normalize_probs(probs)
+    idx = int(np.argmax(probs))
+    conf = float(probs[idx])
+
+    if conf < threshold:
+        return "Safe / No Disaster", "None", conf
+    else:
+        return "Disaster", DISASTER_TYPES[idx % len(DISASTER_TYPES)], conf
 
 
 # -------------------- LOAD MODELS --------------------
 st.sidebar.header("Model Status")
 image_model, text_model, tokenizer = load_local_models()
 
-# -------------------- APP HEADER --------------------
+# -------------------- UI HEADER --------------------
 st.title("🧠 AI-Powered Disaster Aid System")
-st.write(
-    "This system uses **AI + Deep Learning** to detect and classify disasters from **images and text messages**. "
-    "It helps authorities and citizens take timely action for disaster safety and response."
-)
+st.write("AI system that detects disasters from **images and text** and provides safety precautions.")
 
-# -------------------- USER INPUTS --------------------
+# -------------------- INPUTS --------------------
 st.markdown("### 📸 Upload or Capture Image")
 img_file = st.file_uploader("Upload a disaster image", type=["jpg", "jpeg", "png"])
-camera_img = st.camera_input("Or capture using camera")
+camera_img = st.camera_input("Or capture an image")
 
 st.markdown("### 💬 Enter Disaster-Related Text")
 user_text = st.text_area("Enter message or tweet (optional)", height=100)
@@ -135,32 +127,33 @@ if text_model is not None and tokenizer is not None and user_text.strip() != "":
 # -------------------- RESULTS --------------------
 st.markdown("---")
 
-# IMAGE prediction result
+# IMAGE RESULT
 if img_probs is not None:
-    img_label, img_conf = probs_to_label(img_probs)
-    st.subheader("🖼️ Image Model Prediction")
-    st.metric("Predicted", img_label, f"{img_conf:.3f}")
+    img_label, img_type, img_conf = classify_disaster(img_probs)
+    st.subheader("🖼️ Image Model Result")
+    st.metric("Status", img_label, f"{img_conf:.3f}")
+    if img_label == "Disaster":
+        st.caption(get_precaution_message(img_type))
     st.progress(float(img_conf))
-    st.caption(get_precaution_message(img_label))
 else:
-    st.info("No image provided yet.")
+    st.info("Upload or capture an image to analyze.")
 
-# TEXT prediction result
+# TEXT RESULT
 if txt_probs is not None:
-    txt_label, txt_conf = probs_to_label(txt_probs)
-    st.subheader("💬 Text Model Prediction")
-    st.metric("Predicted", txt_label, f"{txt_conf:.3f}")
+    txt_label, txt_type, txt_conf = classify_disaster(txt_probs)
+    st.subheader("💬 Text Model Result")
+    st.metric("Status", txt_label, f"{txt_conf:.3f}")
+    if txt_label == "Disaster":
+        st.caption(get_precaution_message(txt_type))
     st.progress(float(txt_conf))
-    st.caption(get_precaution_message(txt_label))
 else:
-    st.info("No text provided yet.")
+    st.info("Enter some text to analyze.")
 
 # -------------------- FUSED PREDICTION --------------------
 st.markdown("---")
-st.subheader("🔗 Fused Multi-Modal Result")
+st.subheader("🔗 Fused AI Decision")
 
 img_weight, txt_weight = 0.6, 0.4
-
 try:
     if img_probs is not None and txt_probs is not None:
         fused_probs = img_weight * np.array(img_probs) + txt_weight * np.array(txt_probs)
@@ -170,18 +163,16 @@ try:
         fused_probs = txt_probs
 
     if fused_probs is not None:
-        fused_probs = normalize_probs(fused_probs)
-        fused_label, fused_conf = probs_to_label(fused_probs)
-        st.metric("Final Assessment", fused_label, f"{fused_conf:.3f}")
-        st.progress(float(fused_conf))
-        st.info(get_precaution_message(fused_label))
+        label, d_type, conf = classify_disaster(fused_probs, threshold=0.6)
+        st.metric("Final Assessment", label, f"{conf:.3f}")
+        st.progress(float(conf))
 
-        # ✅ Show GCC alert only when disaster (not safe)
-        if fused_label.lower() != "safe / no disaster":
+        if label == "Disaster":
+            st.info(get_precaution_message(d_type))
             if st.button("🚨 Send GCC Alert"):
-                st.success("✅ GCC Alert sent to authorities and local users in your area!")
-    else:
-        st.warning("Please upload an image or text to get predictions.")
+                st.success("✅ GCC Alert sent successfully to authorities and users nearby!")
+        else:
+            st.success("✅ Area appears safe. Stay alert and follow updates.")
 except Exception as e:
     st.error(f"Fusion failed safely: {e}")
 
@@ -189,8 +180,6 @@ except Exception as e:
 st.markdown("---")
 st.markdown("### 🧭 About the App")
 st.write(
-    "The **AI-Powered Disaster Aid System** analyzes both images and text to identify multiple types of disasters "
-    "like floods, fires, droughts, and earthquakes. When a disaster is detected, users can alert the **Global Command Center (GCC)** "
-    "for emergency response and assistance."
+    "This AI system uses CNN + LSTM models to detect disasters from image and text data. "
+    "If a disaster is identified, safety precautions and an alert option are automatically provided."
 )
-st.caption("Supporting SDG 3 (Good Health), SDG 11 (Sustainable Cities), and SDG 13 (Climate Action). 🌍")
