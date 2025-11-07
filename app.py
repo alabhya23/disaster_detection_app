@@ -168,11 +168,11 @@ try:
         # Precaution
         precaution = get_precaution_message(fused_label)
         st.info(precaution)
-
-        # GCC Alert
-        if "Disaster" in fused_label:
+        
+          # GCC Alert
+        if fused_label.strip().lower() == "disaster":
             if st.button("🚨 Send GCC Alert"):
-                st.success("✅ Alert sent to authorities and local users!")
+        st.success("✅ Alert sent to authorities and local users!")
     else:
         st.warning("Please provide image or text input to generate predictions.")
 except Exception as e:
