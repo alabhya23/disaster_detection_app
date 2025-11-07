@@ -14,16 +14,7 @@ TEXT_MODEL_PATH = "disaster_text_bilstm.h5"
 TOKENIZER_PATH = "tokenizer.pkl"
 DEFAULT_TEXT_MAXLEN = 30
 
-# Updated label set (example classes)
-LABELS = [
-    "Safe / No Disaster",
-    "Flood",
-    "Fire",
-    "Earthquake",
-    "Hurricane",
-    "Drought",
-    "Landslide",
-]
+LABELS = ["Safe / No Disaster", "Disaster"]
 
 # -------------------- HELPERS --------------------
 def load_local_models():
@@ -60,33 +51,33 @@ def probs_to_label(probs):
 
 
 def normalize_probs(p):
-    """Ensure probabilities are normalized."""
+    """Ensure probs are a 2-element vector for fusion."""
     if p is None:
         return None
     p = np.array(p).flatten()
-    if np.sum(p) == 0:
-        return np.ones(len(LABELS)) / len(LABELS)
-    return p / np.sum(p)
+    if p.size == 1:
+        p = np.array([1 - float(p), float(p)])
+    elif p.size > 2:
+        p = p[:2] / np.sum(p[:2])
+    return p
 
 
 def get_precaution_message(label):
     label = label.lower()
     if "fire" in label:
-        return "🔥 Fire detected! Stay away from flames, turn off gas sources, and evacuate immediately."
+        return "🔥 Fire detected! Stay away from flames and evacuate immediately."
     elif "flood" in label:
         return "🌊 Flooding reported! Move to higher ground and avoid floodwater."
     elif "earthquake" in label:
-        return "🌍 Earthquake detected! Take cover under sturdy furniture and stay away from windows."
+        return "🌍 Earthquake detected! Move to an open area and stay away from buildings."
     elif "hurricane" in label or "storm" in label:
-        return "🌪️ Severe storm detected! Stay indoors, secure loose items, and keep emergency supplies ready."
+        return "🌪️ Severe storm detected! Stay indoors and away from windows."
     elif "landslide" in label:
-        return "🏔️ Landslide risk! Move to safer, higher ground immediately."
-    elif "drought" in label:
-        return "☀️ Drought detected! Conserve water, avoid unnecessary irrigation, and store drinking water safely."
+        return "🏔️ Landslide risk! Move to safer ground immediately."
     elif "safe" in label or "no disaster" in label:
-        return "✅ No disaster detected. Stay alert and monitor updates."
+        return "✅ No disaster detected. Stay alert and safe."
     else:
-        return "⚠️ Potential hazard detected. Follow local safety alerts."
+        return "⚠️ Potential hazard detected. Follow local alerts for safety."
 
 
 # -------------------- LOAD MODELS --------------------
@@ -96,7 +87,7 @@ image_model, text_model, tokenizer = load_local_models()
 # -------------------- APP HEADER --------------------
 st.title("🧠 AI-Powered Disaster Aid System")
 st.write(
-    "This system uses **AI + Deep Learning** to detect and classify disasters from **images and text messages**. "
+    "This system uses **AI + Deep Learning** to detect disasters from **images and text messages**. "
     "It helps authorities and users receive timely alerts and take preventive actions."
 )
 
@@ -137,29 +128,26 @@ if text_model is not None and tokenizer is not None and user_text.strip() != "":
 # -------------------- RESULTS --------------------
 st.markdown("---")
 
-# IMAGE result
+# Individual model results
 if img_probs is not None:
     img_label, img_conf = probs_to_label(img_probs)
     st.subheader("🖼️ Image Model Prediction")
     st.metric("Predicted", img_label, f"{img_conf:.3f}")
     st.progress(float(img_conf))
-    st.caption(get_precaution_message(img_label))
 else:
     st.info("No image provided yet.")
 
-# TEXT result
 if txt_probs is not None:
     txt_label, txt_conf = probs_to_label(txt_probs)
     st.subheader("💬 Text Model Prediction")
     st.metric("Predicted", txt_label, f"{txt_conf:.3f}")
     st.progress(float(txt_conf))
-    st.caption(get_precaution_message(txt_label))
 else:
     st.info("No text provided yet.")
 
-# -------------------- FUSED PREDICTION --------------------
+# Fused prediction
 st.markdown("---")
-st.subheader("🔗 Combined (Fused) Multi-Modal Result")
+st.subheader("🔗 Fused Multi-Modal Prediction")
 
 img_weight, txt_weight = 0.6, 0.4
 
@@ -174,15 +162,17 @@ try:
     if fused_probs is not None:
         fused_probs = normalize_probs(fused_probs)
         fused_label, fused_conf = probs_to_label(fused_probs)
-
         st.metric("Final Assessment", fused_label, f"{fused_conf:.3f}")
         st.progress(float(fused_conf))
-        st.info(get_precaution_message(fused_label))
 
-        # ✅ GCC alert
-        if fused_label.lower() != "safe / no disaster":
+        # Precaution
+        precaution = get_precaution_message(fused_label)
+        st.info(precaution)
+
+        # GCC Alert
+        if "Disaster" in fused_label:
             if st.button("🚨 Send GCC Alert"):
-                st.success("✅ GCC Alert sent! Nearby authorities have been notified.")
+                st.success("✅ Alert sent to authorities and local users!")
     else:
         st.warning("Please provide image or text input to generate predictions.")
 except Exception as e:
@@ -192,9 +182,8 @@ except Exception as e:
 st.markdown("---")
 st.markdown("### 🧭 About the App")
 st.write(
-    "The **AI-Powered Disaster Aid System** uses **CNN (for images)** and **LSTM (for text)** models "
-    "to detect multiple disaster types such as floods, droughts, and fires. "
-    "It fuses both visual and textual data for accurate situational awareness. "
-    "When a disaster is detected, a **GCC (Global Command Center)** alert can be triggered for rapid response."
+    "The **AI-Powered Disaster Aid System** uses CNN (for images) and LSTM (for text) models to detect potential disasters. "
+    "The system fuses both image and text information to improve accuracy and can trigger GCC (Global Command Center) alerts "
+    "for real-time disaster response."
 )
-st.caption("Aligned with SDG 3 (Good Health), SDG 11 (Sustainable Cities), and SDG 13 (Climate Action). 🌍")
+st.caption("Developed to support SDG 11 (Sustaina
